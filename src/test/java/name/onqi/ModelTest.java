@@ -1,6 +1,10 @@
 package name.onqi;
 
+import org.hibernate.Query;
 import org.hibernate.SessionFactory;
+import org.hibernate.transform.Transformers;
+import org.hibernate.type.LongType;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -8,6 +12,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Arrays;
+import java.util.List;
 
 
 /**
@@ -53,10 +60,91 @@ public class ModelTest {
     }
 
     @Test
-    public void createParent() {
+    public void test(){
+        Long[] cIds = new Long[] {null, 1L, 2L, 3L, 4L, 5L};
+        Long[] uIds = new Long[] {null, 1L, 2L, 3L, 4L, 5L};
+        Long[] rIds = new Long[] {null, 1L, 2L, 3L, 4L, 5L, 6L};
+        Long[] dIds = new Long[] {null, 1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L};
+        for (Long cId : cIds) {
+            for (Long uId : uIds) {
+                for (Long rId : rIds) {
+                    for (Long dId : dIds) {
+                        testFetch(new Long[]{cId, uId, rId, dId});
+                    }
+                }
+            }
+        }
+    }
+
+    private void testFetch(Long[] indices) {
+        Long companyId = indices[0];
+        Long unitId = indices[1];
+        Long userId = indices[2];
+        Long deviceId = indices[3];
+        List<Branch> sqlBranches = fetchSql(companyId, unitId, userId, deviceId);
+        List<Branch> hibernateBranches = fetch(companyId, unitId, userId, deviceId);
+        Assert.assertArrayEquals(String.format("Failed on %s", Arrays.toString(indices)), sqlBranches.toArray(), hibernateBranches.toArray());
+    }
+
+
+    public List<Branch> fetch(Long companyId, Long unitId, Long userId, Long deviceId){
+        StringBuilder queryBuilder = new StringBuilder("SELECT c.id AS companyId, u.id AS unitId, r.id AS userId, d.id AS deviceId")
+                .append(" FROM Device d RIGHT OUTER JOIN d.user as r RIGHT OUTER JOIN r.unit as u RIGHT OUTER JOIN u.company as c")
+                .append(" WHERE 1=1");
+        if (companyId != null){
+            queryBuilder.append(" AND c.id =:cId");
+        }
+        if (unitId != null){
+            queryBuilder.append(" AND u.id =:uId");
+        }
+        if (userId != null){
+            queryBuilder.append(" AND r.id =:rId");
+        }
+        if (deviceId != null){
+            queryBuilder.append(" AND d.id =:dId");
+        }
+        Query query = sessionFactory.getCurrentSession().createQuery(
+                queryBuilder.toString());
+        if (companyId != null){
+            query.setParameter("cId", companyId);
+        }
+        if (unitId != null){
+            query.setParameter("uId", unitId);
+        }
+        if (userId != null){
+            query.setParameter("rId", userId);
+        }
+        if (deviceId != null){
+            query.setParameter("dId", deviceId);
+        }
+        List<Branch> branches = (List<Branch>) query
+                .setResultTransformer(Transformers.aliasToBean(Branch.class))
+                .list();
+        return branches;
 
     }
 
+    public List<Branch> fetchSql(Long companyId, Long unitId, Long userId, Long deviceId){
+        Query q = sessionFactory.getCurrentSession().createSQLQuery("SELECT c.id AS companyId, u.id AS unitId, r.id AS userId, d.id AS deviceId" +
+                " FROM Company c" +
+                " LEFT OUTER JOIN Unit u on (u.company_id = c.id)" +
+                " LEFT OUTER JOIN User r ON (r.unit_id = u.id)" +
+                " LEFT OUTER JOIN Device d ON (d.user_id = r.id)" +
+                " WHERE (:cId IS NULL OR c.id =:cId)" +
+                " AND (:uId IS NULL OR u.id =:uId)" +
+                " AND (:rId IS NULL OR r.id =:rId)" +
+                " AND (:dId IS NULL OR d.id =:dId)")
+                .addScalar("companyId", LongType.INSTANCE)
+                .addScalar("unitId", LongType.INSTANCE)
+                .addScalar("userId", LongType.INSTANCE)
+                .addScalar("deviceId", LongType.INSTANCE);
+        List<Branch> branches = q
+                .setParameter("cId", companyId).setParameter("uId", unitId).setParameter("rId", userId).setParameter("dId", deviceId)
+                .setResultTransformer(Transformers.aliasToBean(Branch.class))
+                .list();
+
+        return branches;
+    }
 
     @Transactional
     public Company createCompany(int nameIndex) {
